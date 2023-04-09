@@ -333,56 +333,66 @@ contract NetworkV2 is Governed, ReentrancyGuard {
         string memory branch,
         string memory githubUser
     ) nonReentrant external {
-        bountiesIndex = bountiesIndex.add(1);
+        require(tokenAmount > 0 || fundingAmount > 0, "2");
 
-        bounties[bountiesIndex].id = bountiesIndex;
-        bounties[bountiesIndex].cid = cid;
-        bounties[bountiesIndex].title = title;
-        bounties[bountiesIndex].repoPath = repoPath;
-        bounties[bountiesIndex].branch = branch;
-        bounties[bountiesIndex].githubUser = githubUser;
-        bounties[bountiesIndex].creator = msg.sender;
-        bounties[bountiesIndex].creationDate = block.timestamp;
-        bounties[bountiesIndex].transactional = transactional;
+        // Create a new bounty
+        uint256 id = bountiesIndex.add(1);
+        bounties[id] = Bounty({
+            id: id,
+            cid: cid,
+            title: title,
+            repoPath: repoPath,
+            branch: branch,
+            githubUser: githubUser,
+            creator: msg.sender,
+            creationDate: block.timestamp,
+            transactional: transactional,
+            closed: false,
+            canceled: false,
+            rewardAmount: 0,
+            rewardToken: address(0),
+            fundingAmount: 0,
+            tokenAmount: 0
+        });
 
-        bounties[bountiesIndex].closed = false;
-        bounties[bountiesIndex].canceled = false;
-
+        // Check registry if it exists
         if (address(registry) != address(0)) {
             if (registry.treasury() != address(0)) {
                 require(registry.isAllowedToken(transactional, true) == true, "6");
-                if (fundingAmount > 0 && address(0) != rewardToken) {
+                if (fundingAmount > 0 && rewardToken != address(0)) {
                     require(registry.isAllowedToken(rewardToken, false) == true, "7");
                 }
             }
         }
 
-        if (address(0) != rewardToken) {
+        // Set bounty properties based on token/funding amounts
+        if (rewardToken != address(0)) {
             require(tokenAmount == 0, "1");
             _amountGT0(rewardAmount);
             _amountGT0(fundingAmount);
             require(ERC20(rewardToken).transferFrom(msg.sender, address(this), rewardAmount));
 
-            bounties[bountiesIndex].rewardAmount = rewardAmount;
-            bounties[bountiesIndex].rewardToken = rewardToken;
-            bounties[bountiesIndex].fundingAmount = fundingAmount;
-            bounties[bountiesIndex].tokenAmount = 0;
+            bounties[id].rewardAmount = rewardAmount;
+            bounties[id].rewardToken = rewardToken;
+            bounties[id].fundingAmount = fundingAmount;
         } else {
-            require(fundingAmount > 0 && tokenAmount == 0 || fundingAmount == 0 && tokenAmount > 0, "5");
+            require(tokenAmount > 0 && fundingAmount == 0 || fundingAmount > 0 && tokenAmount == 0, "5");
 
             if (fundingAmount > 0) {
-                bounties[bountiesIndex].fundingAmount = fundingAmount;
-                bounties[bountiesIndex].tokenAmount = 0;
+                bounties[id].fundingAmount = fundingAmount;
             } else {
-                bounties[bountiesIndex].tokenAmount = tokenAmount;
                 require(ERC20(transactional).transferFrom(msg.sender, address(this), tokenAmount), "4");
+                bounties[id].tokenAmount = tokenAmount;
             }
         }
 
-        cidBountyId[cid] = bounties[bountiesIndex].id;
-        bountiesOfAddress[msg.sender].push(bounties[bountiesIndex].id);
+        // Add the bounty ID to the user's bounties
+        bountiesOfAddress[msg.sender].push(id);
 
-        emit BountyCreated(bounties[bountiesIndex].id, bounties[bountiesIndex].cid, msg.sender);
+        // Map the CID to the bounty ID
+        cidBountyId[cid] = id;
+
+        emit BountyCreated(id, cid, msg.sender);
     }
 
     /*
